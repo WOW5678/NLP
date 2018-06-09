@@ -4,7 +4,7 @@ function: LSTM-CRF实现对医疗数据的处理
 1. 将CCKS数据处理成有标注的序列数据
 2. 对每个word embedding-->BILSTM-->CRF
 3. 其中embedding过程： 每个病历文件为一个样本数据，每个单词变成一个id,每个病历文件
-变成id序列，然后使用tf.nn.embedding_lookup()生成每个word embedding,然后送入LSTM-->CRF中
+变成id序列，然后使用tf.nn.embedding_lookup()生成每个word embedding,然后送入BILSTM-->CRF中
 '''
 import tensorflow as tf
 import os
