@@ -2,6 +2,7 @@
 '''
 function:
 1. 处理medical data,根据标记文件 标注数据
+2. 使用tensorflow的crf API创建CRF model
 '''
 import codecs
 import os
