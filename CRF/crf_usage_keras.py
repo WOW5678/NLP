@@ -5,7 +5,7 @@
 import re
 import numpy as np
 
-sents=open('icwb2-data/icwb2-data/training/msr_training_test.utf8',encoding='utf-8').read().strip()
+sents=open('data/msr_training_test.utf8',encoding='utf-8').read().strip()
 print('sents:',repr(sents))
 sents=sents.split('\n') # 这个语料库的换行方式是\n
 # 注意‘ +’是个正则表达式，是匹配至少一个空格
