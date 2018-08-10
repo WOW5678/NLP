@@ -9,6 +9,7 @@ import tensorflow as tf
 # Data setting
 num_examples=10
 num_words=20
+# 特征相当于计算出了100个特征函数的结果
 num_features=100
 num_tags=5
 
@@ -32,6 +33,7 @@ with tf.Graph().as_default():
         sequence_lengths_t=tf.constant(sequence_length)
 
         # compute unary scores from a linear layer
+        # weights 就是针对每个特征函数的权重
         weights=tf.get_variable('weights',[num_features,num_tags])
         matricized_x_t=tf.reshape(x_t,[-1,num_features])
         matricized_unary_scores=tf.matmul(matricized_x_t,weights)
@@ -50,6 +52,11 @@ with tf.Graph().as_default():
         loss=tf.reduce_mean(-log_likelihood)
         train_op=tf.train.GradientDescentOptimizer(0.01).minimize(loss)
         session.run(tf.global_variables_initializer())
+
+        '''
+        mask的作用是屏蔽掉指定长度(sequence_length)之后的label
+        因为每个样本只关注前sequence_length的单词，所以标注也只关注到这个地方
+        '''
         mask=(np.expand_dims(np.arange(num_words),axis=0)
               < np.expand_dims(sequence_length,axis=1))
         total_labels=np.sum(sequence_length)
@@ -57,7 +64,7 @@ with tf.Graph().as_default():
         #Train a fixed number of iteration
         for i in range(200):
             tf_viterbi_sequence,_=session.run([viterbi_sequence,train_op])
-            if i%100==0 or i==100:
+            if i%100==0 or i==200:
                 correct_labels=np.sum((y==tf_viterbi_sequence)*mask)
                 accuracy=100.0*correct_labels/float(total_labels)
                 print('Accuracy:%.2f%%'%accuracy)
