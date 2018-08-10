@@ -4,7 +4,7 @@ function: LSTM-CRF实现对医疗数据的处理
 1. 将CCKS数据处理成有标注的序列数据
 2. 对每个word embedding-->BILSTM-->CRF
 3. 其中embedding过程： 每个病历文件为一个样本数据，每个单词变成一个id,每个病历文件
-变成id序列，然后使用tf.nn.embedding_lookup()生成每个word embedding,然后送入BILSTM-->CRF中
+变成id序列，然后使用tf.nn.embedding_lookup()生成每个word embedding,然后送入LSTM-->CRF中
 '''
 import tensorflow as tf
 import os
@@ -17,7 +17,6 @@ def labelChar(all_txtoriginal_texts):
     fw=open('labelData.txt', 'w')
     label_dict={'解剖部位':'body','手术':'surgery','药物':'drug',
                 '独立症状':'ind_symptoms','症状描述':'SymptomDes'}
-    corpus=[]
     allSamples=[]
     allSample_labels=[]
     for file in all_txtoriginal_texts:
@@ -25,7 +24,6 @@ def labelChar(all_txtoriginal_texts):
         label_filename=file.replace('txtoriginal.','')
         with codecs.open(original_filename,encoding='utf-8') as f:
             original_content=f.read().strip()
-            corpus.extend(list(original_content))
             allSamples.append(original_content)
             # 标注之后的序列
             sy = ['O'  for i in range(len(original_content))]
@@ -56,7 +54,7 @@ def labelChar(all_txtoriginal_texts):
         for x, y in zip(original_content, sy):
             fw.write(x + '\t' + y)
             fw.write('\n')
-    return set(corpus),allSamples,allSample_labels
+    return allSamples,allSample_labels
 
 class BILSTM_CRF(object):
     def __init__(self,rnn_size,embedding_size):
@@ -68,7 +66,7 @@ class BILSTM_CRF(object):
         self.y=tf.placeholder(tf.int32,[None,max_sequence_length])
         self.dropout_keep_prob=tf.placeholder(tf.float32)
 
-        embedding_mat=tf.Variable(tf.random_uniform((len(corpus),self.embedding_size),-1.0,1.0))
+        embedding_mat=tf.Variable(tf.random_uniform((max_id+1,self.embedding_size),-1.0,1.0))
         embedding_output=tf.nn.embedding_lookup(embedding_mat,self.x)
         embedding_output=tf.reshape(embedding_output,[-1,self.embedding_size])
         embedding_output=tf.split(embedding_output,max_sequence_length)
@@ -159,10 +157,14 @@ def regular_data(x_data,y_data):
     vocab_processor=tf.contrib.learn.preprocessing.VocabularyProcessor(max_sequence_length,min_frequency=1)
     text_processed=np.array(list(vocab_processor.fit_transform(x_data)))
 
+    # 计算text_processed中最大的标号 即为单词的总个数
+    max_id = max([item for row in text_processed for item in row])
+    print('max_id:', max_id)
+
     vocab_processor=tf.contrib.learn.preprocessing.VocabularyProcessor(max_sequence_length,min_frequency=1)
     label_processed=np.array(list(vocab_processor.fit_transform(labels)))
     #print('label_processed:',label_processed)
-    return text_processed,label_processed
+    return text_processed,label_processed,max_id
 
 def get_batch(batch_size):
     ids=np.random.permutation(len(x_data))
@@ -179,13 +181,10 @@ if __name__ == '__main__':
     basedir=os.path.join(os.getcwd(),'train_data600')
     pattern='*.txtoriginal.txt'
     all_txtoriginal_texts=glob.glob(os.path.join(basedir,pattern))
-    corpus,allSamples,allSample_labels=labelChar(all_txtoriginal_texts)
+    allSamples,allSample_labels=labelChar(all_txtoriginal_texts)
     #x_data=sample2ids(corpus,allSamples)
     #将x_data,y_data规整为统一长度的样本集
-    x_data,y_data=regular_data(allSamples,allSample_labels)
-    print('samples:',allSamples[:2])
-    print('allSamples_labels:',allSample_labels[:2])
-    print('y_data:',y_data[:2])
+    x_data,y_data,max_id=regular_data(allSamples,allSample_labels)
 
     # 第二步：创建BILSTM模型
     lstm_crf=BILSTM_CRF(10,50)
