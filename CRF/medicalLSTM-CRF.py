@@ -15,10 +15,9 @@ print(tf.__version__)
 
 # 使用SMBE方法进行数据标注
 def labelChar(all_txtoriginal_texts):
-    fw=open('labelData.txt', 'w')
+    fw=open('labelData.txt', 'w',encoding='utf-8')
     label_dict={'解剖部位':'body','手术':'surgery','药物':'drug',
                 '独立症状':'ind_symptoms','症状描述':'SymptomDes'}
-    corpus=[]
     allSamples=[]
     allSample_labels=[]
     for file in all_txtoriginal_texts:
@@ -26,7 +25,6 @@ def labelChar(all_txtoriginal_texts):
         label_filename=file.replace('txtoriginal.','')
         with codecs.open(original_filename,encoding='utf-8') as f:
             original_content=f.read().strip()
-            corpus.extend(list(original_content))
             allSamples.append(original_content)
             # 标注之后的序列
             sy = ['O'  for i in range(len(original_content))]
@@ -47,9 +45,10 @@ def labelChar(all_txtoriginal_texts):
                     sy[end-1]='E-'+label_dict.get(label)
                     for  i in range(start+1,end-1):
                         sy[i]='M-'+label_dict.get(label)
+
         allSample_labels.append(sy)
         posFile=file.replace('.txtoriginal','-label')
-        with open(posFile,'w') as f:
+        with open(posFile,'w',encoding='utf-8') as f:
             for x,y in zip(original_content,sy):
                 f.write(x+'\t'+y)
                 f.write('\n')
@@ -57,31 +56,33 @@ def labelChar(all_txtoriginal_texts):
         for x, y in zip(original_content, sy):
             fw.write(x + '\t' + y)
             fw.write('\n')
-    return set(corpus),allSamples,allSample_labels
+    return allSamples,allSample_labels
 
 class LSTM_CRF(object):
-    def __init__(self,rnn_size,embedding_size):
+    def __init__(self,rnn_size=10,embedding_size=50, max_sequence_length=20,num_tags=6,batch_size=30):
         self.rnn_size=rnn_size
         self.embedding_size=embedding_size
+        self.max_sequence_length=max_sequence_length
+        self.num_tags=num_tags
+        self.batch_size=batch_size
 
     def lstm_model(self):
-        self.x=tf.placeholder(tf.int32,[None,max_sequence_length])
-        self.y=tf.placeholder(tf.int32,[None,max_sequence_length])
+        self.x=tf.placeholder(tf.int32,[None,self.max_sequence_length])
+        self.y=tf.placeholder(tf.int32,[None,self.max_sequence_length])
         self.dropout_keep_prob=tf.placeholder(tf.float32)
 
-        embedding_mat=tf.Variable(tf.random_uniform((len(corpus),self.embedding_size),-1.0,1.0))
+        embedding_mat=tf.Variable(tf.random_uniform((max_id+1,self.embedding_size),-1.0,1.0))
+        print('embedding_mat:',embedding_mat)
         embedding_output=tf.nn.embedding_lookup(embedding_mat,self.x)
         cell=tf.contrib.rnn.BasicRNNCell(num_units=self.rnn_size)
-        print('emebdding_output:',embedding_output)
         output,state= tf.nn.dynamic_rnn(cell,embedding_output,dtype=tf.float32)
-        print('output:',output)
         self.output=tf.nn.dropout(output,self.dropout_keep_prob)
 
     def cfr_model(self):
         # All the squences in this example have the same length,but they can be variable in a real model
-        sequence_length = np.full(batch_size, max_sequence_length, dtype=np.int32)
-        weights = tf.get_variable('weights', [self.rnn_size, num_tags],dtype=tf.float32)
-        bias = tf.get_variable('bias',[num_tags],dtype=tf.float32)
+        sequence_length = np.full(self.batch_size, self.max_sequence_length, dtype=np.int32)
+        weights = tf.get_variable('weights', [self.rnn_size, self.num_tags],dtype=tf.float32)
+        bias = tf.get_variable('bias',[self.num_tags],dtype=tf.float32)
         output_ = tf.reshape(self.output, [-1, self.rnn_size])
         print('output:', output_)
         print('weights:', weights)
@@ -96,8 +97,7 @@ class LSTM_CRF(object):
             sequence_lengths_t = tf.constant(sequence_length)
             # compute unary scores from a linear layer
             matricized_unary_scores = tf.matmul(output_, weights)+bias
-
-            unary_scores = tf.reshape(matricized_unary_scores, [-1, max_sequence_length, num_tags])
+            unary_scores = tf.reshape(matricized_unary_scores, [-1, self.max_sequence_length, self.num_tags])
             print('unary_scores:', unary_scores)
             # Compute the log-likelihood of the gold sequences and keep the transition
             # params for inference at test time
@@ -119,7 +119,7 @@ class LSTM_CRF(object):
 
             # Train a fixed number of iteration
             for i in range(200):
-                x_batch,y_batch=get_batch(batch_size)
+                x_batch,y_batch=get_batch(self.batch_size)
                 tf_viterbi_sequence, _ = session.run([viterbi_sequence, train_op],feed_dict={self.x:x_batch,self.y:y_batch,self.dropout_keep_prob:0.5})
                 if i % 1 == 0 or i == 100:
                     # correct_labels = np.sum((y_data== tf_viterbi_sequence) * mask)
@@ -156,10 +156,15 @@ def regular_data(x_data,y_data):
     vocab_processor=tf.contrib.learn.preprocessing.VocabularyProcessor(max_sequence_length,min_frequency=1)
     text_processed=np.array(list(vocab_processor.fit_transform(x_data)))
 
+    # 计算text_processed中最大的标号 即为单词的总个数
+    max_id=max([item for row in text_processed for item in row])
+    print('max_id:',max_id)
+
     vocab_processor=tf.contrib.learn.preprocessing.VocabularyProcessor(max_sequence_length,min_frequency=1)
     label_processed=np.array(list(vocab_processor.fit_transform(labels)))
-    #print('label_processed:',label_processed)
-    return text_processed,label_processed
+    print('label_processed:',label_processed)
+    print('text_processed:',text_processed)
+    return text_processed,label_processed,max_id
 
 def get_batch(batch_size):
     ids=np.random.permutation(len(x_data))
@@ -167,24 +172,18 @@ def get_batch(batch_size):
     y_shuffled=y_data[ids]
     return x_shuffled[:batch_size],y_shuffled[:batch_size]
 if __name__ == '__main__':
-    #定义全局参数
+    # 定义全局变量
     max_sequence_length=20
-    num_tags=6
-    batch_size=32
-
     #第一步：标注数据 并写入一个文件中
     basedir=os.path.join(os.getcwd(),'train_data600')
     pattern='*.txtoriginal.txt'
     all_txtoriginal_texts=glob.glob(os.path.join(basedir,pattern))
-    corpus,allSamples,allSample_labels=labelChar(all_txtoriginal_texts)
+    allSamples,allSample_labels=labelChar(all_txtoriginal_texts)
     #x_data=sample2ids(corpus,allSamples)
     #将x_data,y_data规整为统一长度的样本集
-    x_data,y_data=regular_data(allSamples,allSample_labels)
-    print('samples:',allSamples[:2])
-    print('allSamples_labels:',allSample_labels[:2])
-    print('y_data:',y_data[:2])
+    x_data,y_data,max_id=regular_data(allSamples,allSample_labels)
 
-    # 第二步：创建LSTM模型
+    # # 第二步：创建LSTM模型
     lstm_crf=LSTM_CRF(10,50)
     lstm_crf.lstm_model()
     lstm_crf.cfr_model()
